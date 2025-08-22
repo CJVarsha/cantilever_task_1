@@ -1,56 +1,58 @@
 from flask import Flask, render_template, request
-import pandas as pd
+import requests
 
 app = Flask(__name__)
-df = pd.read_excel('products.xlsx')
 
-# Clean price and map rating for filtering
-df['Price'] = df['Price'].str.replace('£', '').astype(float)
-rating_map = {'One': 1, 'Two': 2, 'Three': 3, 'Four': 4, 'Five': 5}
-df['RatingNum'] = df['Rating'].map(rating_map)
+API_URL = "https://fakestoreapi.com/products"
 
 @app.route('/', methods=['GET', 'POST'])
 def home():
-    results = df
-    query = ''
-    min_price = ''
-    max_price = ''
-    min_rating = ''
+    # Fetch all products from API
+    response = requests.get(API_URL)
+    products = response.json()
     
-    if request.method == 'POST':
-        query = request.form.get('query', '').lower()
-        min_price = request.form.get('min_price', '')
-        max_price = request.form.get('max_price', '')
-        min_rating = request.form.get('min_rating', '')
-        
-        results = df
-        
-        if query:
-            results = results[results['Title'].str.lower().str.contains(query)]
-        
-        if min_price:
-            try:
-                min_price_val = float(min_price)
-                results = results[results['Price'] >= min_price_val]
-            except ValueError:
-                pass
-        
-        if max_price:
-            try:
-                max_price_val = float(max_price)
-                results = results[results['Price'] <= max_price_val]
-            except ValueError:
-                pass
-        
-        if min_rating:
-            try:
-                min_rating_val = int(min_rating)
-                results = results[results['RatingNum'] >= min_rating_val]
-            except ValueError:
-                pass
+    query = request.form.get('query', '').lower() if request.method == 'POST' else ''
+    min_price = request.form.get('min_price', '') if request.method == 'POST' else ''
+    max_price = request.form.get('max_price', '') if request.method == 'POST' else ''
+    category = request.form.get('category', '') if request.method == 'POST' else ''
     
-    return render_template('index.html', products=results.to_dict(orient='records'),
-                           query=query, min_price=min_price, max_price=max_price, min_rating=min_rating)
+    filtered = products
+    
+    # Filter by search keyword in title or description
+    if query:
+        filtered = [p for p in filtered if query in p['title'].lower() or query in p['description'].lower()]
+    
+    # Filter by minimum price
+    if min_price:
+        try:
+            min_price_val = float(min_price)
+            filtered = [p for p in filtered if p['price'] >= min_price_val]
+        except ValueError:
+            pass
+    
+    # Filter by maximum price
+    if max_price:
+        try:
+            max_price_val = float(max_price)
+            filtered = [p for p in filtered if p['price'] <= max_price_val]
+        except ValueError:
+            pass
+    
+    # Filter by category
+    if category and category != 'all':
+        filtered = [p for p in filtered if p['category'] == category]
+    
+    # Get unique categories for filter dropdown
+    categories = list(set(p['category'] for p in products))
+    categories.sort()
+    
+    return render_template('index.html',
+                           products=filtered,
+                           query=query,
+                           min_price=min_price,
+                           max_price=max_price,
+                           category=category,
+                           categories=categories)
 
 if __name__ == '__main__':
     app.run(debug=True)
